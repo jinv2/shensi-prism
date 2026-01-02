@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHENSI PRISM | AI Workspace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --accent: #ff7b00; /* 更深邃的橙色 */
+            --bg-dark: #080808;
+            --bg-panel: #111111;
+            --glass: rgba(20, 20, 20, 0.7);
+        }
+        
+        body { 
+            background-color: var(--bg-dark); 
+            color: #d4d4d4; 
+            font-family: 'Space Grotesk', sans-serif; 
+            height: 100vh; 
+            overflow: hidden;
+            background-image: radial-gradient(circle at 10% 10%, rgba(255, 123, 0, 0.05) 0%, transparent 20%);
+        }
+        
+        .font-code { font-family: 'Fira Code', monospace; }
+
+        /* 棱镜玻璃效果 */
+        .prism-panel {
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 呼吸灯边框 */
+        .active-border {
+            border-color: var(--accent);
+            box-shadow: 0 0 15px rgba(255, 123, 0, 0.2);
+        }
+
+        /* 滚动条隐藏但可滚动 */
+        .no-scrollbar::-webkit-scrollbar { width: 4px; }
+        .no-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+        /* Markdown 样式 */
+        .markdown-body pre { background: #000 !important; border: 1px solid #333; padding: 15px; border-radius: 6px; }
+        .markdown-body code { color: #ffab70; font-family: 'Fira Code'; font-size: 0.9em; }
+        .markdown-body h1, .markdown-body h2 { color: #fff; margin-top: 20px; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .markdown-body ul { padding-left: 20px; list-style: disc; color: #a0a0a0; }
+
+        /* 思考折叠动画 */
+        details > summary { list-style: none; cursor: pointer; transition: color 0.2s; }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] > summary { color: var(--accent); margin-bottom: 10px; }
+        
+        /* 闪烁光标 */
+        .cursor-blink { animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+
+    <!-- 顶栏 (极简风格) -->
+    <header class="h-12 border-b border-white/10 flex items-center justify-between px-6 bg-[#0a0a0a]">
+        <div class="flex items-center gap-4">
+            <div class="w-3 h-3 bg-orange-600 rounded-sm rotate-45"></div>
+            <h1 class="text-lg font-bold tracking-widest text-white">SHENSI <span class="text-orange-500 font-light">PRISM</span></h1>
+        </div>
+        <div class="flex items-center gap-4 text-xs font-code text-gray-500">
+            <div id="model-status" class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-gray-600 transition-colors" id="status-dot"></span>
+                <span>DEEPSEEK-V3::READY</span>
+            </div>
+            <button onclick="setupKey()" class="hover:text-white transition-colors">[ CONFIG KEY ]</button>
+        </div>
+    </header>
+
+    <!-- 主工作区 (双栏布局) -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- 左栏：指令与思考 (30% 宽度) -->
+        <aside class="w-[30%] min-w-[350px] flex flex-col border-r border-white/10 bg-[#0c0c0c]">
+            <!-- 历史/对话流 -->
+            <div id="chat-stream" class="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar">
+                <div class="text-xs text-gray-600 font-code text-center mt-10">
+                    // WORKSPACE INITIALIZED<br>
+                    // WAITING FOR COMMAND...
+                </div>
+            </div>
+
+            <!-- 输入区 (固定在底部) -->
+            <div class="p-4 border-t border-white/10 bg-[#111]">
+                <div class="relative">
+                    <textarea id="user-input" class="w-full bg-[#1a1a1a] text-gray-200 text-sm p-3 pr-10 rounded border border-white/10 focus:border-orange-500/50 outline-none resize-none font-code" rows="3" placeholder="Input directive... (Ctrl+Enter to run)"></textarea>
+                    <button onclick="executePrism()" id="send-btn" class="absolute bottom-3 right-3 text-gray-500 hover:text-orange-500 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右栏：工作画布 (70% 宽度) -->
+        <section class="flex-1 bg-[#080808] flex flex-col relative">
+            <!-- 画布标签页 -->
+            <div class="h-10 border-b border-white/10 flex items-center px-4 bg-[#0a0a0a]">
+                <div class="flex items-center gap-2 px-3 py-1 bg-[#1a1a1a] border-t border-l border-r border-white/10 text-xs text-orange-400 font-code rounded-t-sm">
+                    <span>artifact.md</span>
+                </div>
+                <div class="ml-auto text-[10px] text-gray-600 font-code">PRISM RENDER ENGINE</div>
+            </div>
+
+            <!-- 内容渲染区 -->
+            <div id="artifact-container" class="flex-1 overflow-y-auto p-8 markdown-body no-scrollbar">
+                <!-- 欢迎屏幕 -->
+                <div class="h-full flex flex-col items-center justify-center opacity-20 select-none">
+                    <svg class="w-24 h-24 mb-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                    <p class="font-code text-sm">PRISM WORKSPACE EMPTY</p>
+                </div>
+            </div>
+            
+            <!-- 加载条 -->
+            <div id="progress-line" class="absolute top-0 left-0 h-[2px] bg-orange-500 w-0 transition-all duration-300"></div>
+        </section>
+
+    </main>
+
+    <script>
+        // 🔑 配置逻辑
+        const STORAGE_KEY = 'prism_deepseek_key';
+        let apiKey = localStorage.getItem(STORAGE_KEY);
+
+        // 状态管理
+        const ui = {
+            input: document.getElementById('user-input'),
+            chat: document.getElementById('chat-stream'),
+            artifact: document.getElementById('artifact-container'),
+            statusDot: document.getElementById('status-dot'),
+            progress: document.getElementById('progress-line'),
+            btn: document.getElementById('send-btn')
+        };
+
+        // 初始化
+        if(apiKey) updateStatus(true);
+
+        function setupKey() {
+            const key = prompt("Enter DeepSeek API Key (sk-...)\nKey is stored locally in browser.");
+            if(key && key.startsWith('sk-')) {
+                localStorage.setItem(STORAGE_KEY, key);
+                apiKey = key;
+                updateStatus(true);
+            }
+        }
+
+        function updateStatus(ready) {
+            ui.statusDot.style.backgroundColor = ready ? '#22c55e' : '#ef4444'; // Green or Red
+            document.getElementById('model-status').innerHTML = ready ? 
+                '<span class="w-2 h-2 rounded-full bg-green-500"></span><span>DEEPSEEK::ONLINE</span>' : 
+                '<span class="w-2 h-2 rounded-full bg-red-500"></span><span>KEY::MISSING</span>';
+        }
+
+        // 🚀 核心执行逻辑
+        async function executePrism() {
+            if(!apiKey) return setupKey();
+            const prompt = ui.input.value.trim();
+            if(!prompt) return;
+
+            // 1. UI 准备
+            ui.input.value = '';
+            ui.progress.style.width = '30%';
+            ui.btn.classList.add('animate-spin');
+            
+            // 添加用户消息到左侧流
+            addChatMessage('user', prompt);
+
+            // 创建 AI 思考容器
+            const thinkId = 'think-' + Date.now();
+            addThinkingNode(thinkId);
+            
+            // 清空右侧画布准备渲染
+            ui.artifact.innerHTML = '<div class="text-xs font-code text-gray-500 animate-pulse">Generating artifact...</div>';
+
+            try {
+                // 2. 发起 DeepSeek 请求
+                const response = await fetch("https://api.deepseek.com/chat/completions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+                    body: JSON.stringify({
+                        model: "deepseek-chat",
+                        messages: [
+                            { 
+                                role: "system", 
+                                content: `You are SHENSI PRISM. 
+                                Format Requirement:
+                                1. Put reasoning inside <think>...</think>.
+                                2. Put the final main output (code, report, article) strictly at the end.
+                                3. The final output is for the "Artifact" window (Right side), so make it complete and clean Markdown.` 
+                            },
+                            { role: "user", content: prompt }
+                        ],
+                        stream: true
+                    })
+                });
+
+                if(!response.ok) throw new Error("API Refused connection");
+
+                // 3. 流式处理
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = "";
+                
+                while(true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                            try {
+                                const json = JSON.parse(line.substring(6));
+                                const content = json.choices[0].delta.content || "";
+                                fullText += content;
+                                ui.progress.style.width = '70%';
+
+                                // 解析逻辑
+                                const thinkMatch = fullText.match(/<think>([\s\S]*?)<\/think>/);
+                                const rawThinking = thinkMatch ? thinkMatch[1] : (fullText.startsWith('<think>') ? fullText.replace('<think>', '') : '');
+                                
+                                // 更新左侧思考
+                                if(rawThinking) {
+                                    updateThinkingNode(thinkId, rawThinking);
+                                }
+
+                                // 更新右侧画布 (Artifact)
+                                const mainContent = fullText.replace(/<think>[\s\S]*?<\/think>/, '').replace('<think>', '');
+                                if(mainContent.trim()) {
+                                    ui.artifact.innerHTML = marked.parse(mainContent);
+                                }
+
+                            } catch (e) {}
+                        }
+                    }
+                }
+                
+                ui.progress.style.width = '100%';
+                setTimeout(() => ui.progress.style.width = '0', 500);
+
+            } catch (err) {
+                ui.artifact.innerHTML = `<div class="text-red-500 font-code">ERROR: ${err.message}</div>`;
+                ui.progress.style.backgroundColor = 'red';
+            } finally {
+                ui.btn.classList.remove('animate-spin');
+            }
+        }
+
+        // 辅助函数：添加对话气泡
+        function addChatMessage(role, text) {
+            const div = document.createElement('div');
+            div.className = "text-sm text-gray-300 font-code border-l-2 border-white/20 pl-3 py-1";
+            div.innerHTML = `<div class="text-[10px] text-gray-500 mb-1 uppercase">${role}</div>${text}`;
+            ui.chat.appendChild(div);
+            ui.chat.scrollTop = ui.chat.scrollHeight;
+        }
+
+        // 辅助函数：添加思考节点 (折叠样式)
+        function addThinkingNode(id) {
+            const details = document.createElement('details');
+            details.id = id;
+            details.className = "text-xs text-gray-500 font-code bg-[#151515] rounded border border-white/5";
+            details.open = true; // 默认展开，思考完可自动收起
+            details.innerHTML = `
+                <summary class="p-2 hover:bg-[#1a1a1a] select-none flex items-center gap-2">
+                    <span class="animate-pulse">⚡ ANALYZING...</span>
+                </summary>
+                <div class="p-3 pt-0 border-t border-white/5 whitespace-pre-wrap leading-relaxed opacity-80" id="${id}-content"></div>
+            `;
+            ui.chat.appendChild(details);
+            ui.chat.scrollTop = ui.chat.scrollHeight;
+        }
+
+        function updateThinkingNode(id, text) {
+            const content = document.getElementById(id + '-content');
+            if(content) content.innerText = text;
+        }
+
+        // 快捷键支持
+        ui.input.addEventListener('keydown', (e) => {
+            if(e.ctrlKey && e.key === 'Enter') executePrism();
+        });
+    </script>
+</body>
+</html>
